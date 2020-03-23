@@ -3,6 +3,21 @@
   (:export :start-server :say))
 (in-package :chatserver)
 
+(defclass client ()
+  ((socket
+    :reader socket
+    :initarg :socket
+    :initform (error "Must supply a socket."))
+   (name
+    :reader name
+    :initarg :name
+    :initform (error "Must supply a name."))))
+
+(defclass clients ()
+  ((client-list
+    :initform (list)
+    :reader client-list)))
+    
 (defmacro push-front (obj place)
   (let ((obj-name (gensym)) (place-name (gensym)))
     `(let ((,obj-name (if (typep ,obj 'cons) ,obj (cons ,obj nil)))
@@ -33,8 +48,11 @@
 (define-condition sending-message-error (error)
   ((retries :initarg :retries :reader retries)))
 
+;;;Sends a msg to someone
+(defgeneric say (network-obj msg &optional retries))
+
 ;;;Sends a msg to a socket
-(defun say (socket msg &optional (retries 0))
+(defmethod say ((socket usocket:stream-usocket) msg &optional (retries 0))
   (restart-case (handler-case (progn
 				(format (usocket:socket-stream socket) (concatenate 'string msg "~%"))
 				(force-output (usocket:socket-stream socket)))
@@ -42,9 +60,15 @@
     (retry () (say socket msg (+ retries 1)))
     (give-up () nil)))
 
+(defmethod say ((client client) msg &optional (retries 0))
+  (say (socket client) msg retries))
+
+(defmethod say ((clients clients) msg &optional (retries 0))
+  (dolist (client (client-list clients)) (say client msg retries)))
+
 ;;;Sends a msg to the sockets (list with t as the first element) specified
 (defun say-multiple(sockets msg)
-  (dolist (socket (rest sockets)) (funcall #'say socket msg)))
+  (dolist (socket (rest sockets)) (say socket msg)))
 
 ;;;This is a destructive function, it modifies the "sockets" list
 ;;;Expects port, sockets (list with t as the first element), sockets-lock,
